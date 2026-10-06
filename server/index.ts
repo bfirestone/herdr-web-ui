@@ -20,6 +20,7 @@ import { conversationImage, ConversationUnavailable, HistoryChanged, paneConvers
 import { omoPanes } from "./omo.ts";
 import { OMO_ALIASES, OmoStatus, processAlive } from "./omo-status.ts";
 import { omoRuns, omoTasks } from "./omo-tasks.ts";
+import { ActivityTracker } from "./activity.ts";
 import { CompletionTracker } from "./completion.ts";
 import { freeAgentName } from "./agent-name.ts";
 import { SHELL_AGENTS, isShellAgentKind, shellAgentExecutable, startShellAgent } from "./shell-agent.ts";
@@ -510,6 +511,7 @@ export function createServer(
 
   /** `done` for agents herdr loses track of (server/completion.ts), kept across restarts */
   const completions = new CompletionTracker(join(options.stateDir ?? defaultStateDir(), "completions.json"));
+  const activity = new ActivityTracker(join(options.stateDir ?? defaultStateDir(), "activity.json"));
   /** OmO panes get their status from OmO's session files: herdr reports none for them (server/omo-status.ts) */
   const omo = new OmoStatus({
     discover: (panes) => omoPanes(panes),
@@ -524,11 +526,14 @@ export function createServer(
     await omo.refresh(snapshot.panes);
     return omo.apply(snapshot);
   };
-  /** the snapshot clients get: finishes settled, OmO panes named, their running background tasks counted */
+  /** the snapshot clients get: finishes settled, OmO panes named, their running background tasks counted, each pane's last work stamped */
   const clientSnapshot = async (): Promise<SessionSnapshot> => {
-    const snapshot = await completions.readSnapshot(rawSnapshot);
-    if (!snapshot.panes.some((pane) => omo.backgroundOf(pane.pane_id) > 0)) return snapshot;
-    return { ...snapshot, panes: snapshot.panes.map((pane) => omo.backgroundOf(pane.pane_id) > 0 ? { ...pane, background_tasks: omo.backgroundOf(pane.pane_id) } : pane) };
+    const revision = activity.begin();
+    const settled = await completions.readSnapshot(rawSnapshot);
+    // a pane mid-turn before the collector's first baseline is stamped from the snapshot itself
+    activity.reconcile(settled.panes, revision);
+    const panes = activity.apply(settled.panes).map((pane) => omo.backgroundOf(pane.pane_id) > 0 ? { ...pane, background_tasks: omo.backgroundOf(pane.pane_id) } : pane);
+    return { ...settled, panes };
   };
   const machines = options.machines === false ? null : new MachineManager(options.stateDir ?? defaultStateDir(), push, completions, clientSnapshot);
   const bridgeToken = randomBytes(32).toString("hex");
@@ -946,13 +951,20 @@ export function createServer(
     console.error(`web push: ${error instanceof Error ? error.message : String(error)}`);
   };
 
+  /** the status push every client gets, with the pane's last work on it when known */
+  function statusFrame(paneId: string, status: AgentStatus, background?: number): Extract<ServerMessage, { type: "pane-status" }> {
+    const at = activity.at(paneId);
+    return { type: "pane-status", pane_id: paneId, agent_status: status, ...(background === undefined ? {} : { background_tasks: background }), ...(at === null ? {} : { last_working_at: at }) };
+  }
+
   /** Status of EVERY pane, attached or not: one collector feeds all connected clients and web push. */
   function omoChanged(paneId: string, derived: AgentStatus, background: number, turn: boolean): void {
     // OmO's own turn, which herdr's status never shows: back at work, its form has had its answer
     if (turn && derived === "working") promptWaitEnded(paneId);
     // a background task starting or ending is no turn: the status stands, and nothing is alerted
     const status = turn ? completions.observe(paneId, derived, "omo") : completions.current(paneId) ?? completions.observe(paneId, derived, "omo");
-    broadcastAll({ type: "pane-status", pane_id: paneId, agent_status: status, background_tasks: background });
+    activity.observe(paneId, status);
+    broadcastAll(statusFrame(paneId, status, background));
     if (turn) push.onStatus(paneId, status).catch(logPushError);
   }
 
@@ -973,24 +985,31 @@ export function createServer(
       // an agent herdr lost on the way still works and finishes as such (server/completion.ts);
       // an OmO pane whose session is not known keeps herdr's status, under its own name
       const status = completions.observe(paneId, raw, omo.runs(paneId) ? "omo" : agent);
-      broadcastAll({ type: "pane-status", pane_id: paneId, agent_status: status });
+      activity.observe(paneId, status);
+      broadcastAll(statusFrame(paneId, status));
       push.onStatus(paneId, status).catch(logPushError);
     },
     // a finish reported as done, now in front at herdr's terminal: seen, idle again
     onFocus: (paneId) => {
       if (!completions.seen(paneId)) return;
-      broadcastAll({ type: "pane-status", pane_id: paneId, agent_status: "idle" });
+      broadcastAll(statusFrame(paneId, "idle"));
       push.onStatus(paneId, "idle").catch(logPushError);
     },
-    onBaseline: (panes) => push.seed(panes),
+    onBaseline: (panes) => {
+      // a pane working as of this reconcile is stamped now; what it was settled as is what counts
+      for (const pane of panes) activity.observe(pane.pane_id, completions.current(pane.pane_id) ?? pane.agent_status);
+      push.seed(panes);
+    },
     // the tracker first: what it makes of each pane (a finish after work is done, not idle) is
     // what the alerts are measured against from here, or the next event would alert of it
     onResync: (panes, newer) => {
       completions.resync(panes, newer);
+      for (const pane of panes) if (!newer.has(pane.pane_id)) activity.observe(pane.pane_id, completions.current(pane.pane_id) ?? pane.agent_status);
       push.resync(panes.map((pane) => ({ ...pane, agent_status: completions.current(pane.pane_id) ?? pane.agent_status })), newer);
     },
     onPaneEnded: (paneId) => {
       completions.forget(paneId);
+      activity.drop(paneId);
       broadcastAll({ type: "pane-exited", pane_id: paneId });
       push.onEnded(paneId).catch(logPushError);
     },
@@ -2011,6 +2030,7 @@ export function createServer(
     stop: () => {
       clearInterval(outputTimer);
       collector.stop();
+      activity.stop();
       omo.stop();
       machines?.stop();
       registration?.close();
