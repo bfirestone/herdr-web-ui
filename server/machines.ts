@@ -589,7 +589,8 @@ export class MachineManager {
 
 /** A pane after a status frame: a frame that names a count of background tasks replaces it; one that names none leaves it. */
 export function paneAfterStatus(p: HerdrPane, message: Extract<ServerMessage, { type: "pane-status" }>): HerdrPane {
-  const { background_tasks: before, ...pane } = p;
+  const { background_tasks: before, last_working_at: stampBefore, ...pane } = p;
   const tasks = message.background_tasks === undefined ? before : message.background_tasks > 0 ? message.background_tasks : undefined;
-  return { ...pane, agent_status: message.agent_status, ...(tasks === undefined ? {} : { background_tasks: tasks }) };
+  const stamp = message.last_working_at ?? stampBefore;
+  return { ...pane, agent_status: message.agent_status, ...(tasks === undefined ? {} : { background_tasks: tasks }), ...(stamp === undefined ? {} : { last_working_at: stamp }) };
 }

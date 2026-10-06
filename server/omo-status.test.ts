@@ -437,6 +437,12 @@ describe("OmO panes' status in place of herdr's", () => {
     expect("background_tasks" in paneAfterStatus(two, frame(0))).toBe(false);
   });
 
+  it("carries last_working_at through a relayed pane-status frame and keeps the known one when a frame has none", () => {
+    const stamped = paneAfterStatus(pane("omo", "omo", "idle"), { type: "pane-status", pane_id: "omo", agent_status: "working", last_working_at: 1000 });
+    expect(stamped).toMatchObject({ agent_status: "working", last_working_at: 1000 });
+    expect(paneAfterStatus(stamped, { type: "pane-status", pane_id: "omo", agent_status: "idle" })).toMatchObject({ agent_status: "idle", last_working_at: 1000 });
+  });
+
   it("looks the panes up once per refresh, and not again while nothing changed", async () => {
     const { omo, state } = setup();
     await omo.refresh(herdr().panes);

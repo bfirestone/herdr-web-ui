@@ -98,6 +98,7 @@ export const JA: Record<string, string> = {
   "New workspace": "新しいワークスペース",
   "Previous pane": "前のペイン",
   "Next pane": "次のペイン",
+  "Flip agent order": "エージェントの並び順を切り替え",
 
   // ---- agent status words (lib/status.ts) ----
   "READY": "待機",

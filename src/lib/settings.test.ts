@@ -3,7 +3,7 @@ import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { FONT_FAMILY_MAX_CHARS } from "./fontFamily.ts";
-import { alertPrefs, CHAT_FONT_MAX, CHAT_FONT_MIN, CHAT_LANE_MAX_REM, CHAT_LANE_MIN, CHAT_WIDTHS, chatFontSize, chatLaneLength, chatLaneWidth, DEFAULT_SETTINGS, QUICK_REPLIES_MAX, QUICK_REPLY_MAX_CHARS, quickReplyButtons, sanitizeSettings, terminalTheme, forgetPaneViews } from "./settings.ts";
+import { alertPrefs, CHAT_FONT_MAX, CHAT_FONT_MIN, CHAT_LANE_MAX_REM, CHAT_LANE_MIN, CHAT_WIDTHS, chatFontSize, chatLaneLength, chatLaneWidth, DEFAULT_SETTINGS, QUICK_REPLIES_MAX, QUICK_REPLY_MAX_CHARS, quickReplyButtons, sanitizeSettings, terminalTheme, forgetPaneViews, type Settings, type SidebarGrouping } from "./settings.ts";
 
 it("keeps the screen wake lock off until this device explicitly enables it", () => {
   expect(DEFAULT_SETTINGS.keepScreenOn).toBe(false);
@@ -23,9 +23,26 @@ it("defaults legacy records to workspace grouping and accepts only supported mod
   expect(sanitizeSettings({}).sidebarGrouping).toBe("workspace");
   expect(sanitizeSettings({ sidebarGrouping: "workspace" }).sidebarGrouping).toBe("workspace");
   expect(sanitizeSettings({ sidebarGrouping: "directory" }).sidebarGrouping).toBe("directory");
+  expect(sanitizeSettings({ sidebarGrouping: "radar" }).sidebarGrouping).toBe("radar");
   for (const sidebarGrouping of [null, true, "folder", 1]) {
     expect(sanitizeSettings({ sidebarGrouping }).sidebarGrouping).toBe("workspace");
   }
+});
+
+it("keeps the radar order active until flipped, and accepts only the two orders", () => {
+  expect(DEFAULT_SETTINGS.radarOrder).toBe("active");
+  expect(sanitizeSettings({}).radarOrder).toBe("active");
+  expect(sanitizeSettings({ radarOrder: "recent" }).radarOrder).toBe("recent");
+  for (const radarOrder of [null, true, "grouped", 1]) {
+    expect(sanitizeSettings({ radarOrder }).radarOrder).toBe("active");
+  }
+});
+
+// --- Contract assertions ---
+it("holds the shared contracts", () => {
+  const grouping: SidebarGrouping = "radar";
+  const radarOrder: Settings["radarOrder"] = "active";
+  void grouping; void radarOrder;
 });
 
 describe("chat font size", () => {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
-import { matchShortcut, type ShortcutEventLike, keepsArrowsForText, shortcutConflict, shortcutKeys } from "./shortcuts.ts";
+import { matchShortcut, type ShortcutEventLike, type ShortcutId, keepsArrowsForText, shortcutConflict, shortcutKeys } from "./shortcuts.ts";
+import { sanitizeShortcutOverrides } from "./shortcutBindings.ts";
 
 function keyEvent(key: string, patch: Partial<ShortcutEventLike> = {}): ShortcutEventLike {
   return { key, ctrlKey: false, metaKey: false, shiftKey: true, altKey: false, ...patch };
@@ -29,6 +30,14 @@ describe("matchShortcut", () => {
     expect(matchShortcut(keyEvent("k", { ctrlKey: true, altKey: true }), false)).toBeNull();
     expect(matchShortcut(keyEvent("k", { ctrlKey: true, metaKey: true }), false)).toBeNull();
     expect(matchShortcut(keyEvent("x", { ctrlKey: true }), false)).toBeNull();
+  });
+
+  it("matches the agent order flip and lets an override rebind or disable it", () => {
+    expect(matchShortcut(keyEvent("e", { ctrlKey: true }), false)).toBe("flip-order");
+    expect(matchShortcut(keyEvent("E", { metaKey: true }), true)).toBe("flip-order");
+    expect(matchShortcut(keyEvent("r", { ctrlKey: true }), false, { "flip-order": "r" })).toBe("flip-order");
+    expect(matchShortcut(keyEvent("e", { ctrlKey: true }), false, { "flip-order": "r" })).toBeNull();
+    expect(matchShortcut(keyEvent("e", { ctrlKey: true }), false, { "flip-order": null })).toBeNull();
   });
 });
 
@@ -70,4 +79,17 @@ it("matches shifted digits and detects alias and default-restoration conflicts",
   expect(matchShortcut({ key: "!", code: "Digit1", ctrlKey: true, shiftKey: true, altKey: false, metaKey: false }, false, { palette: "1" })).toBe("palette");
   expect(shortcutConflict("palette", ["n"], {})).toBe(true);
   expect(shortcutConflict("palette", shortcutKeys("palette", {}), { palette: "p", settings: "k" })).toBe(true);
+});
+
+describe("shortcut overrides", () => {
+  it("keeps a flip-order override through the sanitizer", () => {
+    expect(sanitizeShortcutOverrides({ "flip-order": "r" })).toEqual({ "flip-order": "r" });
+    expect(sanitizeShortcutOverrides({ "flip-order": null })).toEqual({ "flip-order": null });
+  });
+
+  // --- Contract assertions ---
+  it("holds the shared contracts", () => {
+    const id: ShortcutId = "flip-order";
+    void id;
+  });
 });

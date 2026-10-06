@@ -96,6 +96,7 @@ export const KO: Record<string, string> = {
   "New workspace": "새 워크스페이스",
   "Previous pane": "이전 패널",
   "Next pane": "다음 패널",
+  "Flip agent order": "에이전트 순서 전환",
 
   // ---- agent status words (lib/status.ts) ----
   "READY": "대기",

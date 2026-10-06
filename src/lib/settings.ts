@@ -10,11 +10,12 @@ import { LANGUAGE_SETTINGS, LOCALE_TAGS, resolveLanguage, setCurrentLanguage, ty
 import type { AlertPrefs, DoneAlerts } from "../../shared/notify-policy.ts";
 import { chatFontStack, sanitizeFontFamily } from "./fontFamily.ts";
 import { sanitizeKeyBarExtras, type KeyBarExtra } from "./keys.ts";
+import type { RadarOrder } from "./radar.ts";
 
 export type ThemeSetting = "dark" | "light" | "system";
 export type ResolvedTheme = "dark" | "light";
 export type Density = "compact" | "comfortable";
-export type SidebarGrouping = "workspace" | "directory";
+export type SidebarGrouping = "workspace" | "directory" | "radar";
 /** what the plan meters count: the share of a limit used, or what is left of it */
 export type UsageCount = "used" | "left";
 /** the limit a plan meter shows: the plan's week, or its short session (5 hours on Claude and Codex) */
@@ -40,6 +41,8 @@ export interface Settings {
   density: Density;
   /** The sidebar's display grouping; workspaces themselves remain independent. */
   sidebarGrouping: SidebarGrouping;
+  /** the radar roster's order (sidebarGrouping "radar"); the flip toggles it */
+  radarOrder: RadarOrder;
   /** the chrome color family, keyed as data-palette in src/styles.css */
   palette: Palette;
   /** xterm font size in px */
@@ -103,6 +106,7 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: "dark",
   density: "comfortable",
   sidebarGrouping: "workspace",
+  radarOrder: "active",
   palette: "amber",
   terminalFontSize: 13,
   terminalWheelSpeed: 1,
@@ -228,7 +232,8 @@ export function sanitizeSettings(raw: unknown): Settings {
     shortcutOverrides: sanitizeShortcutOverrides(record["shortcutOverrides"]),
     theme: theme === "dark" || theme === "light" || theme === "system" ? theme : DEFAULT_SETTINGS.theme,
     density: density === "compact" || density === "comfortable" ? density : DEFAULT_SETTINGS.density,
-    sidebarGrouping: record["sidebarGrouping"] === "workspace" || record["sidebarGrouping"] === "directory" ? record["sidebarGrouping"] : DEFAULT_SETTINGS.sidebarGrouping,
+    sidebarGrouping: record["sidebarGrouping"] === "workspace" || record["sidebarGrouping"] === "directory" || record["sidebarGrouping"] === "radar" ? record["sidebarGrouping"] : DEFAULT_SETTINGS.sidebarGrouping,
+    radarOrder: record["radarOrder"] === "active" || record["radarOrder"] === "recent" ? record["radarOrder"] : DEFAULT_SETTINGS.radarOrder,
     palette: record["palette"] === "amber" || record["palette"] === "report" || record["palette"] === "charcoal" || record["palette"] === "catppuccin" || record["palette"] === "lilac" ? record["palette"] : DEFAULT_SETTINGS.palette,
     terminalFontSize: typeof font === "number" && Number.isFinite(font) ? clampFont(font) : DEFAULT_SETTINGS.terminalFontSize,
     terminalWheelSpeed: typeof record["terminalWheelSpeed"] === "number" && Number.isFinite(record["terminalWheelSpeed"])

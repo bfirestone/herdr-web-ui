@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import type { AgentStatus, SessionSnapshot } from "../../shared/protocol.ts";
+import type { AgentStatus, HerdrPane, SessionSnapshot } from "../../shared/protocol.ts";
 import { applyPaneStatus } from "./snapshot.ts";
 
 function snapshotFixture(): SessionSnapshot {
@@ -50,5 +50,22 @@ describe("applyPaneStatus", () => {
   it("returns the same snapshot object when the pane is unknown", () => {
     const current = snapshotFixture();
     expect(applyPaneStatus(current, "w9:p9", "done" as AgentStatus)).toBe(current);
+  });
+
+  it("carries a pane's last_working_at, keeps the one known when a frame has none, and re-renders on a moved stamp alone", () => {
+    const current = snapshotFixture();
+    const stamped = applyPaneStatus(current, "w1:p1", "working", undefined, 1000);
+    expect(stamped.panes.find((pane) => pane.pane_id === "w1:p1")).toMatchObject({ agent_status: "working", last_working_at: 1000 });
+    const same = applyPaneStatus(stamped, "w1:p1", "working");
+    expect(same).toBe(stamped);
+    const moved = applyPaneStatus(stamped, "w1:p1", "working", undefined, 2000);
+    expect(moved).not.toBe(stamped);
+    expect(moved.panes.find((pane) => pane.pane_id === "w1:p1")).toMatchObject({ last_working_at: 2000 });
+  });
+
+  // --- Contract assertions ---
+  it("holds the shared wire contract", () => {
+    const pane: HerdrPane = { ...snapshotFixture().panes[0]!, last_working_at: 0 };
+    void pane;
   });
 });

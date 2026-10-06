@@ -100,6 +100,7 @@ export const ZH: Record<string, string> = {
   "New workspace": "新建工作区",
   "Previous pane": "上一个窗格",
   "Next pane": "下一个窗格",
+  "Flip agent order": "切换代理排序",
 
   // ---- agent status words (lib/status.ts) ----
   "READY": "就绪",

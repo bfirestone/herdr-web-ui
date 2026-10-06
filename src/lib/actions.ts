@@ -25,6 +25,8 @@ export interface AppActions {
   toggleSidebar: () => void;
   /** flips dark/light (a `system` setting becomes the opposite of the resolved theme) */
   toggleTheme: () => void;
+  /** active <-> recent in the radar roster (Settings → radarOrder) */
+  flipRadarOrder: () => void;
   /** Sign out of token/device authentication; null for automatic local/Tailscale access. */
   lock: (() => void) | null;
   /** null once alerts are on (or unsupported); otherwise asks for permission */

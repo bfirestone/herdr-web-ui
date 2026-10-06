@@ -27,8 +27,10 @@ import type { AgentStatus, PaneInfo, SessionSnapshot, TabInfo, WorkspaceInfo } f
 /** Friendly aliases used across the UI. */
 export type HerdrWorkspace = WorkspaceInfo;
 export type HerdrTab = TabInfo;
-/** `background_tasks`: an OmO pane's `task` children still running, counted by the server; absent when none */
-export type HerdrPane = PaneInfo & { background_tasks?: number };
+/** `background_tasks`: an OmO pane's `task` children still running, counted by the server; absent when none.
+ *  `last_working_at`: when the pane's settled status was last `working`, epoch ms on that PC's clock;
+ *  absent for a pane that has not worked since this server started (server/activity.ts) */
+export type HerdrPane = PaneInfo & { background_tasks?: number; last_working_at?: number };
 
 export type { Machine, MachineEvent, PaneTarget, SetupJob, SetupRequest, SetupAction, BridgeIdentity, BridgeHealth } from "./machines.ts";
 
@@ -661,8 +663,8 @@ export type ServerMessage =
   /** how a submit ended: ok once its Enter was sent; otherwise nothing, or only the text, reached the pane */
   | { type: "submit-result"; id: number; pane_id: string; ok: boolean; code?: string; message?: string }
   | { type: "secret-result"; id: number; pane_id: string; ok: boolean; code?: string }
-  /** agent-status push for ANY pane, attached or not (server-side status collector) */
-  | { type: "pane-status"; pane_id: string; agent_status: AgentStatus; /** an OmO pane's running background tasks, when the frame is about one */ background_tasks?: number }
+  /** agent-status push for ANY pane, attached or not (server-side status collector); `last_working_at` as on HerdrPane */
+  | { type: "pane-status"; pane_id: string; agent_status: AgentStatus; /** an OmO pane's running background tasks, when the frame is about one */ background_tasks?: number; last_working_at?: number }
   /** a pane's process exited (pushed even when nobody is attached to it) */
   | { type: "pane-exited"; pane_id: string }
   /** session structure changed (pane created/closed): refetch /api/session */
