@@ -188,9 +188,19 @@ export class HerdrSocket {
   }
 
   attach(paneId: string, cols: number, rows: number, keepSize = false): void {
-    this.outputSeen.delete(paneId);
-    this.inputReady.delete(paneId);
-    this.attached.set(paneId, { cols, rows, keepSize });
+    const state = this.attached.get(paneId);
+    if (state) {
+      // the server keeps an attached pane's subscription and sends no replay: the same
+      // state object keeps pending acknowledgements valid, and its output and input
+      // readiness carry over
+      state.cols = cols;
+      state.rows = rows;
+      state.keepSize = keepSize;
+    } else {
+      this.outputSeen.delete(paneId);
+      this.inputReady.delete(paneId);
+      this.attached.set(paneId, { cols, rows, keepSize });
+    }
     this.send({ type: "attach", pane_id: paneId, cols, rows, flow_control: "ack", ...(keepSize ? { keep_size: true } : {}) });
     if (this.outputStopped) {
       this.outputStopped = false;

@@ -142,3 +142,76 @@ it("waits for capabilities when output precedes snapshot, and supports old bridg
     client.close();
   }
 });
+
+const flowData = (offset: number) => ({ type: "pty-data" as const, pane_id: "p", data: "x".repeat(offset), flow: { stream_id: "s1", offset } });
+const acks = (socket: FakeSocket) => socket.sent.filter((m) => m.type === "pty-ack");
+
+it("keeps acknowledging output written before a re-attach of the same pane", () => {
+  const client = new HerdrSocket("ws://test/ws");
+  client.connect();
+  const socket = FakeSocket.last;
+  socket.open();
+  client.attach("p", 100, 30);
+  const message = flowData(5);
+  socket.receive(message);
+  const acknowledge = client.outputAcknowledgement(message)!;
+  // the server keeps the subscription and its flow window: xterm's pending write must still ack
+  client.attach("p", 100, 30);
+  acknowledge();
+  expect(acks(socket)).toEqual([{ type: "pty-ack", pane_id: "p", stream_id: "s1", offset: 5 }]);
+  client.close();
+});
+
+it("leaves an attached pane ready for input across a re-attach, and still sends the attach", () => {
+  const client = new HerdrSocket("ws://test/ws");
+  client.connect();
+  const socket = FakeSocket.last;
+  socket.open();
+  socket.receive(snapshot(["submit", "input-ready"]));
+  client.attach("p", 100, 30);
+  socket.receive({ type: "input-ready", pane_id: "p" });
+  expect(client.canInput("p")).toBe(true);
+  client.attach("p", 120, 40, true);
+  expect(client.canInput("p")).toBe(true);
+  expect(socket.sent.filter((m) => m.type === "attach")).toEqual([
+    { type: "attach", pane_id: "p", cols: 100, rows: 30, flow_control: "ack" },
+    { type: "attach", pane_id: "p", cols: 120, rows: 40, flow_control: "ack", keep_size: true },
+  ]);
+  // the in-place update is what a reconnect replays
+  socket.open();
+  expect(socket.sent.filter((m) => m.type === "attach").at(-1)).toEqual({ type: "attach", pane_id: "p", cols: 120, rows: 40, flow_control: "ack", keep_size: true });
+  client.close();
+});
+
+it("keeps a re-attached pane's seen output for an old bridge's snapshot", () => {
+  const client = new HerdrSocket("ws://test/ws");
+  client.connect();
+  const socket = FakeSocket.last;
+  socket.open();
+  client.attach("p", 100, 30);
+  socket.receive({ type: "pty-data", pane_id: "p", data: "screen" });
+  client.attach("p", 100, 30);
+  socket.receive(snapshot([]));
+  expect(client.canInput("p")).toBe(true);
+  client.close();
+});
+
+it("starts a pane fresh when it is attached again after a detach", () => {
+  const client = new HerdrSocket("ws://test/ws");
+  client.connect();
+  const socket = FakeSocket.last;
+  socket.open();
+  client.attach("p", 100, 30);
+  const message = flowData(5);
+  socket.receive(message);
+  const acknowledge = client.outputAcknowledgement(message)!;
+  client.detach("p");
+  client.attach("p", 100, 30);
+  // the old subscription's output belongs to a stream the server dropped
+  acknowledge();
+  expect(acks(socket)).toEqual([]);
+  // its seen output is gone too: an old bridge's snapshot does not mark it ready
+  socket.receive(snapshot([]));
+  expect(client.canInput("p")).toBe(false);
+  client.close();
+});
