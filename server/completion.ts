@@ -42,6 +42,12 @@ export class CompletionTracker {
   private readonly worked = new Map<string, string | null>();
   /** panes reported here as `done` while herdr says `idle` or `unknown` */
   private readonly finished = new Map<string, string | null>();
+  /** panes whose native herdr `done` was looked at (focus, or an interact attachment here), with the agent that finished */
+  private readonly acknowledged = new Map<string, string | null>();
+  /** the agent that reported each pane's last native `done`: gone from `worked` by the time it is looked at */
+  private readonly lastAgent = new Map<string, string | null>();
+  /** the herdr the maps describe: a herdr started anew reuses pane ids, so its state is another herdr's */
+  private identity: string | null;
   /** Last reported statuses, and changes that must take precedence over an in-flight snapshot. */
   private readonly reported = new Map<string, AgentStatus>();
   private readonly pending = new Map<number, Map<string, AgentStatus | null>>();
@@ -54,15 +60,20 @@ export class CompletionTracker {
    * the panes live in, the identity of its socket file by default.
    */
   constructor(private readonly file: string | null = null, private readonly herdr: () => string | null = herdrSocketId) {
+    this.identity = herdr();
     if (file === null) return;
     try {
-      const state = JSON.parse(readFileSync(file, "utf8")) as { herdr?: unknown; finished?: unknown; finishedAgents?: unknown };
+      const state = JSON.parse(readFileSync(file, "utf8")) as { herdr?: unknown; finished?: unknown; finishedAgents?: unknown; acknowledged?: unknown; acknowledgedAgents?: unknown };
       const current = herdr();
       if (current === null || state.herdr !== current) return;
-      const agents = state.finishedAgents && typeof state.finishedAgents === "object" && !Array.isArray(state.finishedAgents)
-        ? state.finishedAgents as Record<string, unknown> : {};
+      const names = (raw: unknown): Record<string, unknown> => raw && typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
+      const agents = names(state.finishedAgents);
       for (const pane of Array.isArray(state.finished) ? state.finished : []) {
         if (typeof pane === "string") this.finished.set(pane, typeof agents[pane] === "string" ? agents[pane] as string : null);
+      }
+      const acknowledgedAgents = names(state.acknowledgedAgents);
+      for (const pane of Array.isArray(state.acknowledged) ? state.acknowledged : []) {
+        if (typeof pane === "string") this.acknowledged.set(pane, typeof acknowledgedAgents[pane] === "string" ? acknowledgedAgents[pane] as string : null);
       }
       this.saved = this.serialize(current);
     } catch { /* none yet, or unreadable: start empty */ }
@@ -70,6 +81,7 @@ export class CompletionTracker {
 
   /** A status change as herdr sent it, to the status to report. */
   observe(paneId: string, status: AgentStatus, agent: string | null = null): AgentStatus {
+    this.rekey();
     const reported = this.settle(paneId, status, agent);
     this.record(paneId, reported, ++this.order);
     this.save();
@@ -77,12 +89,18 @@ export class CompletionTracker {
   }
 
   /**
-   * Focus moved onto a pane: a finish reported here as `done` has been seen and is
-   * `idle` again, as herdr does for its own. True when that changed what the pane reads.
+   * The pane was looked at: focus moved onto it at herdr's terminal, or an interact attachment
+   * here became ready. A finish reported here as `done` is `idle` again, as herdr does for its
+   * own; a `done` herdr reports natively is remembered as acknowledged and reported `idle` until
+   * the agent works again. True when that changed what the pane reads.
    */
   seen(paneId: string): boolean {
-    const changed = this.finished.delete(paneId);
+    this.rekey();
     const current = this.reported.get(paneId);
+    const synthesized = this.finished.delete(paneId);
+    const native = !synthesized && current === "done" && !this.acknowledged.has(paneId);
+    if (native) this.acknowledged.set(paneId, this.lastAgent.get(paneId) ?? null);
+    const changed = synthesized || native;
     if (changed || current !== undefined) this.record(paneId, changed ? "idle" : current!, ++this.order);
     if (changed) this.save();
     return changed;
@@ -95,6 +113,7 @@ export class CompletionTracker {
    * (Codex, then OmO started in its place) is not OmO's: that is dropped.
    */
   adopt(paneId: string, agent: string, from: readonly string[]): void {
+    this.rekey();
     let kept = false;
     for (const state of [this.finished, this.worked]) {
       if (!state.has(paneId)) continue;
@@ -123,6 +142,7 @@ export class CompletionTracker {
    * settled it here first: that told no device.
    */
   replayed(paneId: string, status: AgentStatus, before: { before: AgentStatus; agent: string | null }): boolean {
+    this.rekey();
     const busy = (value: AgentStatus): boolean => value === "working" || value === "blocked";
     const shown = this.reported.get(paneId);
     // never reported, or only from a snapshot taken after the work ended: the work it did is not known here yet
@@ -143,6 +163,7 @@ export class CompletionTracker {
    * change the pane shows, long after it ended.
    */
   resync(panes: readonly { pane_id: string; agent_status: AgentStatus; agent?: string | null }[], newer: ReadonlySet<string>): void {
+    this.rekey();
     const live = new Set(panes.map((pane) => pane.pane_id));
     for (const pane of panes) {
       if (newer.has(pane.pane_id)) continue;
@@ -155,7 +176,7 @@ export class CompletionTracker {
       this.record(pane.pane_id, this.settle(pane.pane_id, pane.agent_status, agent), ++this.order);
     }
     // a pane that went during the loss: a snapshot still being read must not bring it back
-    for (const paneId of new Set([...this.worked.keys(), ...this.finished.keys(), ...this.reported.keys()])) {
+    for (const paneId of new Set([...this.worked.keys(), ...this.finished.keys(), ...this.acknowledged.keys(), ...this.reported.keys()])) {
       if (!live.has(paneId) && !newer.has(paneId)) this.drop(paneId, ++this.order);
     }
     this.save();
@@ -168,6 +189,7 @@ export class CompletionTracker {
 
   /** Read an asynchronous snapshot without undoing statuses or focus changes made while it was pending. */
   async readSnapshot(read: () => Promise<SessionSnapshot>, label?: (snapshot: SessionSnapshot) => Promise<SessionSnapshot>): Promise<SessionSnapshot> {
+    this.rekey();
     const order = ++this.order;
     const newer = new Map<string, AgentStatus | null>();
     this.pending.set(order, newer);
@@ -181,6 +203,7 @@ export class CompletionTracker {
 
   /** Present a fresh synchronous snapshot. Async readers must use readSnapshot. */
   present(snapshot: SessionSnapshot): SessionSnapshot {
+    this.rekey();
     return this.project(snapshot, new Map(), ++this.order);
   }
 
@@ -198,7 +221,7 @@ export class CompletionTracker {
       if (status !== pane.agent_status) statuses.set(pane.pane_id, status);
     }
     const live = new Set(snapshot.panes.map((pane) => pane.pane_id));
-    for (const pane of new Set([...this.worked.keys(), ...this.finished.keys(), ...this.reported.keys()])) {
+    for (const pane of new Set([...this.worked.keys(), ...this.finished.keys(), ...this.acknowledged.keys(), ...this.reported.keys()])) {
       if (!live.has(pane) && !newer.has(pane)) this.drop(pane, order);
     }
     this.save();
@@ -218,7 +241,23 @@ export class CompletionTracker {
   private drop(paneId: string, order: number): void {
     this.worked.delete(paneId);
     this.finished.delete(paneId);
+    this.acknowledged.delete(paneId);
+    this.lastAgent.delete(paneId);
     this.record(paneId, null, order);
+  }
+
+  /** herdr restarted under this server: every pane id is another pane's now, and so is anything still being read. */
+  private rekey(): void {
+    const current = this.herdr();
+    if (current === null || current === this.identity) return;
+    this.identity = current;
+    this.worked.clear();
+    this.finished.clear();
+    this.acknowledged.clear();
+    this.lastAgent.clear();
+    this.reported.clear();
+    for (const changes of this.pending.values()) changes.clear();
+    this.saved = "";
   }
 
   private record(paneId: string, status: AgentStatus | null, order: number): void {
@@ -230,7 +269,9 @@ export class CompletionTracker {
   private serialize(herdr: string): string {
     const finished = [...this.finished.keys()].sort();
     const finishedAgents = Object.fromEntries(finished.filter((pane) => this.finished.get(pane) !== null).map((pane) => [pane, this.finished.get(pane)]));
-    return JSON.stringify({ herdr, finished, finishedAgents });
+    const acknowledged = [...this.acknowledged.keys()].sort();
+    const acknowledgedAgents = Object.fromEntries(acknowledged.filter((pane) => this.acknowledged.get(pane) !== null).map((pane) => [pane, this.acknowledged.get(pane)]));
+    return JSON.stringify({ herdr, finished, finishedAgents, acknowledged, acknowledgedAgents });
   }
 
   /** Written whole, and only on a change: a crash mid-write must not leave half a file. */
@@ -258,6 +299,12 @@ export class CompletionTracker {
       // Older state files have no identity: retain their idle finishes, but never apply them to unknown agents.
       if (agent === null || (finishedAgent === null ? status !== "idle" : finishedAgent !== agent)) this.finished.delete(paneId);
     }
+    if (this.acknowledged.has(paneId)) {
+      const acknowledgedAgent = this.acknowledged.get(paneId);
+      // new work, no agent, or another agent: the acknowledged finish is over
+      if (status === "working" || status === "blocked" || agent === null || (acknowledgedAgent !== null && acknowledgedAgent !== agent)) this.acknowledged.delete(paneId);
+      else if (status === "done") return "idle";
+    }
     switch (status) {
       case "working":
       case "blocked":
@@ -267,6 +314,7 @@ export class CompletionTracker {
       case "done":
         this.worked.delete(paneId);
         this.finished.delete(paneId);
+        this.lastAgent.set(paneId, agent);
         return status;
       case "idle":
         if (this.worked.delete(paneId)) this.finished.set(paneId, agent);

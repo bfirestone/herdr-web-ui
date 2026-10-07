@@ -775,6 +775,10 @@ export function createServer(
         }
         attachment.ready = true;
         broadcast(paneId, { type: "input-ready", pane_id: paneId });
+        // the attach took for someone who is looking: an interact client attached to it
+        for (const client of attachment.clients) {
+          if (client.data.mode === "interact") { markSeen(paneId); break; }
+        }
         release();
       };
       const ended = (code: number | null): void => {
@@ -968,6 +972,16 @@ export function createServer(
     if (turn) push.onStatus(paneId, status).catch(logPushError);
   }
 
+  /**
+   * A finish looked at: the pane is in front at herdr's terminal, or an interact attachment of it
+   * became ready here (watching from an observe connection is not looking). A held DONE is READY again.
+   */
+  function markSeen(paneId: string): void {
+    if (!completions.seen(paneId)) return;
+    broadcastAll(statusFrame(paneId, "idle"));
+    push.onStatus(paneId, "idle").catch(logPushError);
+  }
+
   const collector = startStatusCollector({
     onStatus: (paneId, raw, agent, replay) => {
       // read back from a snapshot around a gap between subscriptions. An OmO pane's status there
@@ -990,11 +1004,7 @@ export function createServer(
       push.onStatus(paneId, status).catch(logPushError);
     },
     // a finish reported as done, now in front at herdr's terminal: seen, idle again
-    onFocus: (paneId) => {
-      if (!completions.seen(paneId)) return;
-      broadcastAll(statusFrame(paneId, "idle"));
-      push.onStatus(paneId, "idle").catch(logPushError);
-    },
+    onFocus: (paneId) => markSeen(paneId),
     onBaseline: (panes) => {
       // a pane working as of this reconcile is stamped now; what it was settled as is what counts
       for (const pane of panes) activity.observe(pane.pane_id, completions.current(pane.pane_id) ?? pane.agent_status);
@@ -1765,6 +1775,8 @@ export function createServer(
               reconcileOutput(message.pane_id);
               if (client.data.closing) break;
               if (attachment.ready && !attachment.held) send(client, { type: "input-ready", pane_id: message.pane_id });
+              // already ready (a mirror, or a pty another client attached first): this client looked at it now
+              if (attachment.ready && !attachment.held && client.data.mode === "interact") markSeen(message.pane_id);
               if (attachment.mirror) break;
               if (client.data.mode === "interact" && message.keep_size !== true) {
                 // an operator's viewport owns the shared grid

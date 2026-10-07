@@ -353,4 +353,61 @@ describe("CompletionTracker", () => {
     expect(tracker.replayed("fresh", "working", { before: "idle", agent: "claude" })).toBe(true);
     expect(tracker.replayed("fresh", "blocked", { before: "idle", agent: "claude" })).toBe(true);
   });
+
+  it("acknowledges a done herdr reports natively, and keeps it idle until the agent works again", async () => {
+    const tracker = new CompletionTracker();
+    expect(tracker.observe("p", "working", "claude")).toBe("working");
+    expect(tracker.observe("p", "done", "claude")).toBe("done");
+    expect(tracker.seen("p")).toBe(true);
+    expect(tracker.current("p")).toBe("idle");
+    // herdr keeps saying done in every later snapshot and event: acknowledged, so idle
+    expect(tracker.observe("p", "done", "claude")).toBe("idle");
+    expect(tracker.present(snapshot([{ id: "p", agent: "claude", status: "done" }])).panes[0]!.agent_status).toBe("idle");
+    expect(tracker.seen("p")).toBe(false);
+    // new work ends the acknowledgement: the next finish is news again
+    expect(tracker.observe("p", "working", "claude")).toBe("working");
+    expect(tracker.observe("p", "done", "claude")).toBe("done");
+    // another agent in the pane: not the acknowledged finish
+    expect(tracker.seen("p")).toBe(true);
+    expect(tracker.observe("p", "done", "codex")).toBe("done");
+  });
+
+  it("keeps an acknowledged native done ahead of an older snapshot that still says done", async () => {
+    const tracker = new CompletionTracker();
+    tracker.observe("p", "working", "claude");
+    tracker.observe("p", "done", "claude");
+    const old = delayedSnapshot();
+    const reading = tracker.readSnapshot(old.read);
+    expect(tracker.seen("p")).toBe(true);
+    old.release(snapshot([{ id: "p", agent: "claude", status: "done" }]));
+    expect((await reading).panes[0]!.agent_status).toBe("idle");
+  });
+
+  it("persists the acknowledgement for the same herdr and drops it for another", () => {
+    const dir = mkdtempSync(join(tmpdir(), "herdr-completions-"));
+    const file = join(dir, "completions.json");
+    try {
+      const tracker = new CompletionTracker(file, () => "1:1");
+      tracker.observe("p", "working", "claude");
+      tracker.observe("p", "done", "claude");
+      tracker.seen("p");
+      const state = JSON.parse(readFileSync(file, "utf8"));
+      expect(state.acknowledged).toEqual(["p"]);
+      expect(state.acknowledgedAgents).toEqual({ p: "claude" });
+      expect(new CompletionTracker(file, () => "1:1").observe("p", "done", "claude")).toBe("idle");
+      expect(new CompletionTracker(file, () => "2:2").observe("p", "done", "claude")).toBe("done");
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it("forgets everything when herdr restarts under a running server", () => {
+    let identity = "1:1";
+    const tracker = new CompletionTracker(null, () => identity);
+    tracker.observe("p", "working", "claude");
+    tracker.observe("p", "done", "claude");
+    tracker.seen("p");
+    identity = "2:2";
+    // the new herdr's pane p is another pane: its first idle is plain idle, its done is news
+    expect(tracker.observe("p", "idle", "claude")).toBe("idle");
+    expect(tracker.observe("p", "done", "claude")).toBe("done");
+  });
 });
