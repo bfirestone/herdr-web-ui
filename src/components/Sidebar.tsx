@@ -10,6 +10,7 @@ import type { AppActions } from "../lib/actions.ts";
 import { knownStatus, rollupStatus, STATUS_WORD } from "../lib/status.ts";
 import { AgentMark } from "./AgentMark.tsx";
 import { useWorkspaceMenu } from "./useWorkspaceMenu.tsx";
+import { RadarSidebar } from "./RadarSidebar.tsx";
 import { folderName, placeLine, shortPathTitle } from "../lib/paneName.ts";
 import { useT } from "../lib/i18n.ts";
 import { groupDirectories } from "../lib/directoryGroups.ts";
@@ -96,12 +97,22 @@ export interface SidebarProps {
 }
 
 /**
+ * The PC's roster in the grouping the settings pick. Two components, not an early return: a
+ * grouping changed at runtime would otherwise change the hook count of one mounted component.
+ */
+export function Sidebar({ snapshot, selectedPaneId, actions }: SidebarProps) {
+  const { settings } = useSettings();
+  if (settings.sidebarGrouping === "radar") return <RadarSidebar snapshot={snapshot} selectedPaneId={selectedPaneId} actions={actions} />;
+  return <GroupedSidebar snapshot={snapshot} selectedPaneId={selectedPaneId} actions={actions} />;
+}
+
+/**
  * One row per workspace, as herdr's Spaces sidebar: the row shows the workspace's current pane
  * (the selected one when it is in the workspace, else the one last viewed there, else the one
  * herdr has in front) and opens it. The panes of a workspace are picked from the tab strip
  * over the pane, the palette and Needs you; the row's state is the roll-up of all of them.
  */
-export function Sidebar({ snapshot, selectedPaneId, actions }: SidebarProps) {
+function GroupedSidebar({ snapshot, selectedPaneId, actions }: SidebarProps) {
   const t = useT();
   const { settings } = useSettings();
   const byFolder = settings.sidebarGrouping === "directory";

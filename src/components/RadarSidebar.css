@@ -1,0 +1,131 @@
+/* the radar roster (Settings → Sidebar grouping → By activity): one row per agent pane under
+   workspace headers, ordered by activity; the title carries the state, a mark in front of it */
+
+.radar-order {
+  display: flex;
+  justify-content: flex-end;
+  padding: var(--space-2) var(--space-3) 0;
+}
+
+.radar-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.radar-group {
+  margin-bottom: var(--space-3);
+}
+
+/* a worktree family: the children hang off the parent's group behind a hairline, as the
+   workspace view packs them */
+.radar-children {
+  margin-left: var(--space-3);
+  padding-left: var(--space-1);
+  border-left: var(--hairline) solid var(--border);
+}
+
+.radar-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-h);
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-2);
+  color: var(--text-strong);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+}
+
+.radar-header > svg {
+  flex: 0 0 auto;
+  width: var(--icon-size);
+  height: var(--icon-size);
+  color: var(--text-dim);
+}
+
+.radar-header-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* an orphan worktree names its repo before the branch; a stale group dims with its rows */
+.radar-header-repo {
+  color: var(--text-dim);
+  font-weight: var(--fw-regular);
+}
+
+.radar-group.is-stale > .radar-header {
+  color: var(--text-dim);
+}
+
+.radar-header .sidebar-row-action {
+  opacity: 0;
+}
+
+.radar-header:hover .sidebar-row-action,
+.radar-header:focus-within .sidebar-row-action,
+.radar-header .sidebar-row-action[aria-expanded="true"] {
+  opacity: 1;
+}
+
+/* a split's other panes hang one level under the pane they were split from */
+.radar-row.is-split-child .pane-row {
+  margin-left: var(--space-4);
+}
+
+.radar-row.is-split-child .pane-row::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 50%;
+  left: calc(-1 * var(--space-2));
+  width: var(--space-2);
+  border-left: var(--hairline) solid var(--border);
+  border-bottom: var(--hairline) solid var(--border);
+}
+
+/* the state mark: one monospace glyph in the colour the title takes */
+.radar-mark {
+  flex: 0 0 auto;
+  width: 1.1em;
+  font-family: var(--font-mono);
+  text-align: center;
+}
+
+.radar-row[data-state="working"] .pane-title,
+.radar-row[data-state="working"] .radar-mark { color: var(--status-working); }
+.radar-row[data-state="blocked"] .pane-title,
+.radar-row[data-state="blocked"] .radar-mark { color: var(--status-blocked); }
+.radar-row[data-state="done"] .pane-title,
+.radar-row[data-state="done"] .radar-mark { color: var(--status-done); }
+.radar-row[data-state="idle_fresh"] .pane-title,
+.radar-row[data-state="idle_fresh"] .radar-mark { color: var(--text-strong); }
+.radar-row[data-state="idle"] .pane-title,
+.radar-row[data-state="idle"] .radar-mark { color: var(--text); }
+.radar-row[data-state="idle_stale"] .pane-title,
+.radar-row[data-state="idle_stale"] .radar-mark,
+.radar-row[data-state="unknown"] .pane-title,
+.radar-row[data-state="unknown"] .radar-mark { color: var(--text-dim); }
+
+/* a stale row dims as a whole: the mark box too, not only the words */
+.radar-row[data-state="idle_stale"] .agent-mark-holder {
+  opacity: 0.55;
+}
+
+/* working: a stepped spinner, as the plan meters spin; blocked: the question mark pulses.
+   Both jump between frames (motion.test.ts): a smooth endless animation stutters video beside the app */
+@keyframes radar-spin {
+  to { transform: rotate(360deg); }
+}
+
+.radar-row[data-state="working"] .radar-mark {
+  display: inline-block;
+  animation: radar-spin 0.8s steps(8) infinite;
+}
+
+.radar-row[data-state="blocked"] .radar-mark {
+  animation: pulse var(--dur-pulse) var(--ease-pulse) infinite;
+}

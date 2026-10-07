@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ChevronDown, ChevronRight, Download, Monitor, Plus, Settings, SlidersHorizontal, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Download, History, ListTree, Monitor, Plus, Settings, SlidersHorizontal, X } from "lucide-react";
 import type { Machine, MachineState, MachineUpdate } from "../../shared/machines.ts";
 import { MachineContext } from "../lib/machineContext.tsx";
 import { answerMachineSetup, machineRequest } from "../lib/api.ts";
@@ -11,7 +11,9 @@ import { Sidebar } from "./Sidebar.tsx";
 import { NeedsInput } from "./NeedsInput.tsx";
 import { UsageMeters } from "./UsageMeters.tsx";
 import "./Machines.css";
+import "./RadarSidebar.css";
 import { useT } from "../lib/i18n.ts";
+import { useSettings } from "../lib/settings.ts";
 
 /** The PC header's state word; "connected" is the quiet default and shows as a dot alone. */
 export const STATE_WORD: Readonly<Record<MachineState, string>> = {
@@ -30,6 +32,7 @@ export function MachineSidebar(props: Props) {
   // no top bar: a workspace starts from its PC's header, and Add PC lives in Settings → Remote PCs
   return <div className="sidebar-shell">
     <div className="machine-list" aria-label={t("PCs and workspaces")}>
+      <RadarOrderControl />
       <NeedsInput machines={props.machines} selectedMachineId={props.selectedMachineId} selectedPaneId={props.selectedPaneId} onSelect={props.onSelect} />
       {props.machines.map((machine) => <MachineGroup key={machine.id} {...props} machine={machine} />)}
       {!props.machines.length && <p className="tree-state" role="status">{t("Loading PCs…")}</p>}
@@ -178,5 +181,18 @@ export function MachineActionBanner({ machines, onSetup }: { machines: Machine[]
     <span>{t(update ? "{name} needs a bridge update to reconnect{others}." : "{name} needs setup approval to reconnect{others}.", { name: first.name, others })}</span>
     <button type="button" className="btn" onClick={() => update ? void machineRequest(`/${encodeURIComponent(first.id)}/update-bridge`, "POST").catch(() => onSetup(first, true)) : onSetup(first, false)}>{t(update ? "Update bridge" : "Set up…")}</button>
     <button type="button" className="icon-button update-notice-dismiss" aria-label={t("Dismiss")} title={t("Dismiss")} onClick={() => { const next = [...dismissed, ...waiting.map(noticeKey)]; setDismissed(next); writeDismissed(next); }}><X /></button>
+  </div>;
+}
+
+/** active <-> recent for the radar roster: one setting, so one control, above the PC list */
+function RadarOrderControl() {
+  const t = useT();
+  const { settings, update } = useSettings();
+  if (settings.sidebarGrouping !== "radar") return null;
+  return <div className="radar-order">
+    <div className="segmented" aria-label={t("Agents order")}>
+      <button type="button" aria-pressed={settings.radarOrder === "active"} title={t("Grouped by workspace, busiest first")} onClick={() => update({ radarOrder: "active" })}><ListTree aria-hidden="true" />{t("Active")}</button>
+      <button type="button" aria-pressed={settings.radarOrder === "recent"} title={t("One flat list, most recent first")} onClick={() => update({ radarOrder: "recent" })}><History aria-hidden="true" />{t("Recent")}</button>
+    </div>
   </div>;
 }
