@@ -110,15 +110,20 @@ export class CompletionTracker {
    * The pane's agent is now known under another name (an OmO pane herdr called `claude` or
    * `pi`): what it worked on and finished stays its own. A finish is matched by identity, and
    * would otherwise be dropped as another agent's. What another agent did in the pane before
-   * (Codex, then OmO started in its place) is not OmO's: that is dropped.
+   * (Codex, then OmO started in its place) is not OmO's: that is dropped. The same goes for
+   * a native `done` looked at under the old name: still acknowledged, or another agent's.
    */
   adopt(paneId: string, agent: string, from: readonly string[]): void {
     this.rekey();
     let kept = false;
-    for (const state of [this.finished, this.worked]) {
+    for (const state of [this.finished, this.worked, this.acknowledged, this.lastAgent]) {
       if (!state.has(paneId)) continue;
       const was = state.get(paneId) ?? null;
-      if (was === null || was === agent || from.includes(was)) { state.set(paneId, agent); kept = true; }
+      if (was === null || was === agent || from.includes(was)) {
+        state.set(paneId, agent);
+        // who last said `done` is a memo for `seen`, not state of the pane's own to go on from
+        if (state !== this.lastAgent) kept = true;
+      }
       else state.delete(paneId);
     }
     if (!kept) {
@@ -190,13 +195,17 @@ export class CompletionTracker {
   /** Read an asynchronous snapshot without undoing statuses or focus changes made while it was pending. */
   async readSnapshot(read: () => Promise<SessionSnapshot>, label?: (snapshot: SessionSnapshot) => Promise<SessionSnapshot>): Promise<SessionSnapshot> {
     this.rekey();
+    const identity = this.identity;
     const order = ++this.order;
     const newer = new Map<string, AgentStatus | null>();
     this.pending.set(order, newer);
     try {
       const raw = await read();
       // Display labels such as omo must not replace the herdr identity used to match a finish.
-      return this.project(raw, newer, order, label ? await label(raw) : raw);
+      const display = label ? await label(raw) : raw;
+      // herdr restarted while this was read: its panes are another herdr's, and nothing of them is settled or kept here
+      if (this.identity !== identity || (this.herdr() ?? identity) !== identity) return display;
+      return this.project(raw, newer, order, display);
     }
     finally { this.pending.delete(order); }
   }

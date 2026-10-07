@@ -410,4 +410,39 @@ describe("CompletionTracker", () => {
     expect(tracker.observe("p", "idle", "claude")).toBe("idle");
     expect(tracker.observe("p", "done", "claude")).toBe("done");
   });
+
+  it("does not settle an old herdr's snapshot once it has restarted under a running server", async () => {
+    let identity = "1:1";
+    const tracker = new CompletionTracker(null, () => identity);
+    const old = delayedSnapshot();
+    const reading = tracker.readSnapshot(old.read);
+    identity = "2:2";
+    // the new herdr's reused pane id, at rest
+    expect(tracker.observe("p", "idle", "claude")).toBe("idle");
+    // the old herdr's snapshot lands: p was working there, and q too, which the new herdr has not reported yet
+    old.release(snapshot([{ id: "p", agent: "claude", status: "working" }, { id: "q", agent: "claude", status: "working" }]));
+    const shown = await reading;
+    // nothing of it is settled: the panes keep their raw statuses
+    expect(shown.panes.map((pane) => pane.agent_status)).toEqual(["working", "working"]);
+    expect(tracker.observe("p", "idle", "claude")).toBe("idle");
+    expect(tracker.current("p")).toBe("idle");
+    expect(tracker.observe("q", "idle", "claude")).toBe("idle");
+  });
+
+  it("carries an acknowledged native done over to the agent that adopts the pane", () => {
+    const tracker = new CompletionTracker();
+    tracker.observe("p", "working", "claude");
+    tracker.observe("p", "done", "claude");
+    expect(tracker.seen("p")).toBe(true);
+    // omo discovered in the pane herdr called claude: the acknowledged finish is its own
+    tracker.adopt("p", "omo", ["claude"]);
+    expect(tracker.observe("p", "done", "omo")).toBe("idle");
+    // claude was not one of omo's names here: that finish was another agent's, and omo's done is news
+    const other = new CompletionTracker();
+    other.observe("p", "working", "claude");
+    other.observe("p", "done", "claude");
+    expect(other.seen("p")).toBe(true);
+    other.adopt("p", "omo", ["pi"]);
+    expect(other.observe("p", "done", "omo")).toBe("done");
+  });
 });
