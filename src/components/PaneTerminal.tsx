@@ -60,6 +60,8 @@ export interface PaneTerminalProps {
   view: PaneView;
   /** App selected this pane itself (the selected one closed): switching to it must not take the keyboard */
   autoSelected?: boolean;
+  /** bumped by App on every explicit selection: the same pane picked again re-sends its attach, which the server counts as looking at it */
+  reselect?: number;
   /** xterm font size (settings) */
   terminalFontSize: number;
   /** mouse reports sent per wheel event (settings): 1 is xterm's own one report */
@@ -111,6 +113,7 @@ export function PaneTerminal({
   machineName = "",
   view,
   autoSelected = false,
+  reselect = 0,
   terminalFontSize,
   terminalWheelSpeed,
   terminalFontFamily,
@@ -1192,6 +1195,18 @@ export function PaneTerminal({
       socket.detach(paneId);
     };
   }, [paneId]);
+
+  // the already open pane picked again: no detach, no reset, only the attach sent once more. The
+  // server marks the pane seen for an interact attachment that is ready, so a held DONE clears
+  const reselectRef = useRef(reselect);
+  useEffect(() => {
+    if (reselectRef.current === reselect) return;
+    reselectRef.current = reselect;
+    const socket = socketRef.current;
+    const term = termRef.current;
+    if (!paneId || !socket || !term) return;
+    socket.attach(paneId, term.cols, term.rows, chatViewRef.current);
+  }, [reselect, paneId]);
 
 
   // the user picked the pane App had switched to on its own (the same row or lens again,

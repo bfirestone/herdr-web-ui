@@ -265,11 +265,11 @@ export function SettingsDialog({ open, onClose, actions, updates, auth, herdrVer
               </div>
             </div>
             <div className="settings-row">
-              <div><span className="settings-label">{t("Sidebar grouping")}</span><span className="settings-description">{t("Group sessions by workspace or by full folder path on each PC")}</span></div>
+              <div><span className="settings-label">{t("Sidebar grouping")}</span><span className="settings-description">{t("Group sessions by workspace, by full folder path, or list every agent by activity as herdr-radar does")}</span></div>
               <div className="segmented" aria-label={t("Sidebar grouping")}>
-                {(["workspace", "directory"] as const).map((grouping) => (
+                {(["workspace", "directory", "radar"] as const).map((grouping) => (
                   <button key={grouping} type="button" aria-pressed={settings.sidebarGrouping === grouping} onClick={() => update({ sidebarGrouping: grouping })}>
-                    {t(grouping === "workspace" ? "By workspace" : "By folder")}
+                    {t(grouping === "workspace" ? "By workspace" : grouping === "directory" ? "By folder" : "By activity")}
                   </button>
                 ))}
               </div>

@@ -22,6 +22,7 @@ import { paneStorageId, type Machine, type MachineEvent } from "../shared/machin
 import { takeAuthTokenFromUrl } from "./lib/authLink.ts";
 import { applyPaneStatus } from "./lib/snapshot.ts";
 import { rosterPanes } from "./lib/dagPane.ts";
+import { radarPaneOrder } from "./lib/radar.ts";
 import { SnapshotRequests } from "./lib/snapshotRequests.ts";
 import { alertPrefs, useSettings, type DefaultView } from "./lib/settings.ts";
 import { useShortcuts } from "./lib/shortcuts.ts";
@@ -182,6 +183,7 @@ export function App() {
     if (paneFromUrl()) return paneFromUrl();
     return storedSelection()?.pane_id ?? null;
   });
+  const [reselect, setReselect] = useState(0);
   // App picked the selected pane itself because the one selected closed: it must not raise a
   // phone's keyboard (over the drawer the close was tapped in) until the user picks a pane or lens
   const [autoSelected, setAutoSelected] = useState(false);
@@ -499,6 +501,8 @@ export function App() {
     setSelectedMachineId(machineId); setSelectedPaneId(paneId); setAutoSelected(false); setDrawerOpen(false);
     setOutputStopped(false);
     storeSelection(machineId, paneId);
+    // a sidebar row selects through here (MachineSidebar): the same pane picked again re-attaches too
+    setReselect((count) => count + 1);
   }, []);
   const selectTargetRef = useRef(selectTarget); selectTargetRef.current = selectTarget;
   useEffect(() => {
@@ -526,6 +530,7 @@ export function App() {
     setSelectedPaneId(paneId);
     setAutoSelected(false);
     setDrawerOpen(false);
+    setReselect((count) => count + 1);
   }, []);
 
   // a tapped notification focuses this window and names the pane (public/sw.js)
@@ -612,12 +617,17 @@ export function App() {
     () => ({
       selectPane,
       selectAdjacentPane: (direction) => {
-        // the panes the sidebar lists: a step never lands on a viewer it leaves out
-        const panes = rosterPanes(snapshotRef.current?.panes ?? [], selectedPaneId);
-        if (panes.length === 0) return;
-        const index = panes.findIndex((pane) => pane.pane_id === selectedPaneId);
-        const next = panes[(index + direction + panes.length) % panes.length];
-        if (next) selectPane(next.pane_id);
+        const snapshot = snapshotRef.current;
+        if (!snapshot) return;
+        // the panes the sidebar lists, in the order it lists them: a step never lands on a viewer it leaves out
+        const ids = settings.sidebarGrouping === "radar"
+          ? radarPaneOrder(snapshot, settings.radarOrder, Date.now())
+          : rosterPanes(snapshot.panes, selectedPaneId).map((pane) => pane.pane_id);
+        if (ids.length === 0) return;
+        const index = ids.indexOf(selectedPaneId ?? "");
+        // a selection the roster leaves out (a shell, in radar mode) enters it at either end
+        const next = index < 0 ? (direction > 0 ? ids[0] : ids[ids.length - 1]) : ids[(index + direction + ids.length) % ids.length];
+        if (next) selectPane(next);
       },
       setView,
       toggleView: () => setView(view === "chat" ? "terminal" : "chat"),
@@ -669,7 +679,7 @@ export function App() {
       refresh: () => void load(),
       openFiles: selectedPaneId !== null ? () => { setDrawerOpen(false); setFilesOpen(true); } : null,
     }),
-    [selectPane, selectedPaneId, selectedMachineId, setView, view, updateSettings, resolvedTheme, settings.radarOrder, canSignOut, lock, bellVisible, bell.run, enableNotifications, load],
+    [selectPane, selectedPaneId, selectedMachineId, setView, view, updateSettings, resolvedTheme, settings.sidebarGrouping, settings.radarOrder, canSignOut, lock, bellVisible, bell.run, enableNotifications, load],
   );
 
   useShortcuts(actions, locked === false);
@@ -863,6 +873,7 @@ export function App() {
             machineName={selectedMachine?.name ?? selectedMachineId}
             view={view}
             autoSelected={autoSelected}
+            reselect={reselect}
             terminalFontSize={settings.terminalFontSize}
             terminalWheelSpeed={settings.terminalWheelSpeed}
             terminalFontFamily={settings.terminalFontFamily}
