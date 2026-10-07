@@ -71,6 +71,13 @@
   opacity: 1;
 }
 
+/* no hover on touch: the header's ⋯ is always there, as the rows' are */
+@media (pointer: coarse) {
+  .radar-header .sidebar-row-action {
+    opacity: 1;
+  }
+}
+
 /* a split's other panes hang one level under the pane they were split from */
 .radar-row.is-split-child .pane-row {
   margin-left: var(--space-4);
@@ -85,6 +92,12 @@
   width: var(--space-2);
   border-left: var(--hairline) solid var(--border);
   border-bottom: var(--hairline) solid var(--border);
+}
+
+/* a selected split child drops its corner: the rail already marks the row, and the corner
+   would draw over it */
+.radar-row.is-split-child.is-selected .pane-row::after {
+  display: none;
 }
 
 /* the state mark: one monospace glyph in the colour the title takes */
@@ -128,4 +141,12 @@
 
 .radar-row[data-state="blocked"] .radar-mark {
   animation: pulse var(--dur-pulse) var(--ease-pulse) infinite;
+}
+
+/* reduced motion: the marks hold still; the glyph and its colour still carry the state */
+@media (prefers-reduced-motion: reduce) {
+  .radar-row[data-state="working"] .radar-mark,
+  .radar-row[data-state="blocked"] .radar-mark {
+    animation: none;
+  }
 }
