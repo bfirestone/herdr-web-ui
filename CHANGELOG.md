@@ -7,7 +7,16 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
 
 ## [Unreleased]
 
+### Added
+- **Sidebar grouping → By activity**: the roster the way herdr-radar draws it. One row per agent
+  under its workspace, worktrees as a tree, the busiest first, the title coloured by state with a
+  mark in front, and idle agents fading after two hours. `Mod+Shift+E` flips between the grouped
+  and the flat order. The bridge now records when each pane last worked and serves it as
+  `last_working_at`.
+
 ### Changed
+- Opening a pane in the browser now counts as looking at it: a DONE badge turns READY when you open
+  the pane here, as it did only for herdr's own focus before.
 - The message box follows **Settings → Chat font size**, as the transcript and prompt cards
   already did: with a mouse it is typed at the transcript's size, and on a touch screen it
   grows with a size above 16px (it stays at 16px or more, so iOS still does not zoom).

@@ -429,6 +429,42 @@ One set for both themes: the card is island black wherever it shows.
 - Footer holds the contextual **Install app** action and Settings with the plan meters beside it.
   It carries no product name or version: the running versions are read in Settings.
 
+### Radar roster (`.radar-*`)
+- Appearance's **Sidebar grouping** has a third choice, **By activity**: herdr-radar's Agents panel in
+  the browser. One row per agent pane sits under its workspace header, as in herdr-radar. Shells are
+  left to the tab strip and the palette. A repository's worktree workspaces hang off its group behind
+  the `.worktree-children` hairline with a branch glyph. A worktree whose main checkout is closed, or
+  open with only shells, stands at the top level with its repo name before the branch. The other panes
+  of a split hang one level under the pane they were split from with a short corner. Group headers use
+  a compact header at `min-height: var(--control-h)`.
+- Two orders, flipped by the segmented control above the PC list (drawn once: the choice is one
+  setting), `Mod+Shift+E` and the palette. **Active** keeps the groups and ranks by activity at both
+  levels. The busiest workspace comes first. A worktree family ranks by its busiest member with the
+  parent first. A split ranks as one unit by its newest pane with the layout head first. **Recent** is
+  one flat list by activity with no headers. Attention states never outrank recency. A pane that has
+  not worked since the server started ranks after every one that has.
+- The title carries the state, and a monospace mark in front of it carries it in shape, so the row
+  reads without colour. The mark is `aria-hidden` and the row's tooltip says the state word.
+
+  | State | Title | Mark |
+  | --- | --- | --- |
+  | working | `--status-working` | `◠`, turning in eight steps |
+  | blocked | `--status-blocked` | `?`, pulsing (`--ease-pulse`) |
+  | done | `--status-done` | `✓`, held until the pane is opened here or focused in herdr |
+  | idle, within 15 min of its last turn | `--text-strong` | `·` |
+  | idle | `--text` | `·` |
+  | idle, 2 h or more since its last turn | `--text-dim`, mark box at 0.55 opacity | `·` |
+  | unknown | `--text-dim` | `◌` |
+
+  A group whose rows are all stale dims its header too. The two thresholds are constants
+  (`FRESH_MS`, `STALE_MS` in `src/lib/radar.ts`). The tiers re-derive once a minute.
+- A row never repeats its header: when a pane's title is its folder, which is also the workspace's
+  name, the row takes the tab's name, else the agent's. Line two names the tab when it was given a
+  name. In Recent, line two names the workspace first. The header's `⋯` carries the workspace menu.
+  A row's `⋯` carries rename pane and close pane. Rows are not draggable because the order is the point.
+- Opening a pane here counts as looking at it, in every grouping. An `interact` attachment that becomes
+  ready clears a held DONE, as herdr's own focus does. Watching from an observe connection does not.
+
 ### Plan meters (`.usage*`)
 - Beside Settings, one button holding up to four chips (three and `+N` past that), one per
   account in the user's order: provider mark, mono `--fs-2xs` percent of the limit chosen in
